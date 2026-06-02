@@ -35,6 +35,8 @@ class Grid {
 
   TileType at(int col, int row) => _tiles[row][col];
 
+  void setTile(int col, int row, TileType type) => _tiles[row][col] = type;
+
   bool isWalkable(int col, int row) {
     if (col < 0 || col >= kCols || row < 0 || row >= kRows) return false;
     return _tiles[row][col] == TileType.floor;
