@@ -17,6 +17,7 @@ class PlayerComponent extends PositionComponent {
   late Vector2 _moveStart;
   late Vector2 _moveTarget;
   double _moveElapsed = 0;
+  final List<(int, int)> _path = [];
 
   static final _paint = Paint()..color = const Color(0xFF00BCD4);
 
@@ -26,21 +27,37 @@ class PlayerComponent extends PositionComponent {
           size: Vector2.all(kTileSize),
         );
 
+  void setDestination(List<(int, int)> path) {
+    _path
+      ..clear()
+      ..addAll(path);
+  }
+
   @override
   void update(double dt) {
     super.update(dt);
-    if (!_moving) return;
-    _moveElapsed += dt;
-    if (_moveElapsed >= moveDuration) {
-      position = _moveTarget.clone();
-      _moving = false;
+    if (_moving) {
+      _moveElapsed += dt;
+      if (_moveElapsed >= moveDuration) {
+        position = _moveTarget.clone();
+        _moving = false;
+      } else {
+        final t = _moveElapsed / moveDuration;
+        position = Vector2(
+          _moveStart.x + (_moveTarget.x - _moveStart.x) * t,
+          _moveStart.y + (_moveTarget.y - _moveStart.y) * t,
+        );
+      }
       return;
     }
-    final t = _moveElapsed / moveDuration;
-    position = Vector2(
-      _moveStart.x + (_moveTarget.x - _moveStart.x) * t,
-      _moveStart.y + (_moveTarget.y - _moveStart.y) * t,
-    );
+    if (_path.isNotEmpty) {
+      final (nextCol, nextRow) = _path.first;
+      if (tryMove(nextCol - gridCol, nextRow - gridRow)) {
+        _path.removeAt(0);
+      } else {
+        _path.clear();
+      }
+    }
   }
 
   @override

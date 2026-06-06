@@ -1,3 +1,4 @@
+import 'dart:collection';
 import 'dart:math';
 
 import 'package:flame/events.dart';
@@ -104,14 +105,37 @@ class PocketBomberGame extends FlameGame with TapCallbacks {
     final col = ((pos.x - gridOffset.x) / kTileSize).floor();
     final row = ((pos.y - gridOffset.y) / kTileSize).floor();
     if (col < 0 || col >= kCols || row < 0 || row >= kRows) return;
+    if (!grid.isWalkable(col, row)) return;
+    player.setDestination(_bfsPath(player.gridCol, player.gridRow, col, row));
+  }
 
-    final dc = col - player.gridCol;
-    final dr = row - player.gridRow;
-    if (dc.abs() >= dr.abs()) {
-      player.tryMove(dc.sign, 0);
-    } else {
-      player.tryMove(0, dr.sign);
+  List<(int, int)> _bfsPath(
+      int startCol, int startRow, int targetCol, int targetRow) {
+    if (startCol == targetCol && startRow == targetRow) return [];
+    final visited = <(int, int), (int, int)?>{(startCol, startRow): null};
+    final queue = Queue<(int, int)>()..add((startCol, startRow));
+    const dirs = [(1, 0), (-1, 0), (0, 1), (0, -1)];
+    while (queue.isNotEmpty) {
+      final (col, row) = queue.removeFirst();
+      if (col == targetCol && row == targetRow) {
+        final path = <(int, int)>[];
+        var cur = (col, row);
+        while (visited[cur] != null) {
+          path.add(cur);
+          cur = visited[cur]!;
+        }
+        return path.reversed.toList();
+      }
+      for (final (dc, dr) in dirs) {
+        final nc = col + dc;
+        final nr = row + dr;
+        if (!grid.isWalkable(nc, nr)) continue;
+        if (visited.containsKey((nc, nr))) continue;
+        visited[(nc, nr)] = (col, row);
+        queue.add((nc, nr));
+      }
     }
+    return [];
   }
 
   void _placeBomb(int col, int row) {
