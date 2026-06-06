@@ -1,8 +1,11 @@
 import 'dart:collection';
 import 'dart:math';
+import 'dart:ui';
 
+import 'package:flame/components.dart';
 import 'package:flame/events.dart';
 import 'package:flame/game.dart';
+import 'package:flutter/painting.dart';
 
 import 'bomb.dart';
 import 'enemy.dart';
@@ -30,6 +33,11 @@ class PocketBomberGame extends FlameGame with TapCallbacks {
   bool _playerDead = false;
   double _deathTimer = 0;
   static const double _deathDelay = 0.6;
+
+  bool _playerWon = false;
+  double _winTimer = 0;
+  _WinOverlay? _winOverlay;
+  static const double _winDelay = 2.0;
 
   final _rng = Random();
 
@@ -59,6 +67,8 @@ class PocketBomberGame extends FlameGame with TapCallbacks {
     _totalKilled = 0;
     _playerDead = false;
     _deathTimer = 0;
+    _playerWon = false;
+    _winTimer = 0;
     _enemies.clear();
 
     for (var i = 0; i < kMaxEnemies; i++) {
@@ -67,6 +77,8 @@ class PocketBomberGame extends FlameGame with TapCallbacks {
   }
 
   void _restart() {
+    _winOverlay?.removeFromParent();
+    _winOverlay = null;
     _gridComponent.removeFromParent();
     _enemies.clear();
     _init();
@@ -75,6 +87,11 @@ class PocketBomberGame extends FlameGame with TapCallbacks {
   @override
   void update(double dt) {
     super.update(dt);
+    if (_playerWon) {
+      _winTimer += dt;
+      if (_winTimer >= _winDelay) _restart();
+      return;
+    }
     if (_playerDead) {
       _deathTimer += dt;
       if (_deathTimer >= _deathDelay) _restart();
@@ -94,13 +111,13 @@ class PocketBomberGame extends FlameGame with TapCallbacks {
   }
 
   void _onBombButtonPressed() {
-    if (_playerDead) return;
+    if (_playerDead || _playerWon) return;
     _placeBomb(player.gridCol, player.gridRow);
   }
 
   @override
   void onTapDown(TapDownEvent event) {
-    if (_playerDead) return;
+    if (_playerDead || _playerWon) return;
     final pos = event.canvasPosition;
     final col = ((pos.x - gridOffset.x) / kTileSize).floor();
     final row = ((pos.y - gridOffset.y) / kTileSize).floor();
@@ -204,6 +221,10 @@ class PocketBomberGame extends FlameGame with TapCallbacks {
       _onPlayerDied();
     }
 
+    if (_totalKilled >= kTotalEnemies && !_playerDead && !_playerWon) {
+      _onPlayerWon();
+    }
+
     for (final b in toChain) {
       b.trigger();
     }
@@ -273,5 +294,40 @@ class PocketBomberGame extends FlameGame with TapCallbacks {
   void _onPlayerDied() {
     _playerDead = true;
     _deathTimer = 0;
+  }
+
+  void _onPlayerWon() {
+    _playerWon = true;
+    _winTimer = 0;
+    _winOverlay = _WinOverlay(gameSize: size);
+    add(_winOverlay!);
+  }
+}
+
+class _WinOverlay extends Component {
+  _WinOverlay({required this.gameSize});
+  final Vector2 gameSize;
+
+  @override
+  void render(Canvas canvas) {
+    canvas.drawRect(
+      Rect.fromLTWH(0, 0, gameSize.x, gameSize.y),
+      Paint()..color = const Color(0x99000000),
+    );
+    final tp = TextPainter(
+      text: const TextSpan(
+        text: 'YOU WIN!',
+        style: TextStyle(
+          color: Color(0xFFFFD700),
+          fontSize: 48,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    tp.paint(
+      canvas,
+      Offset((gameSize.x - tp.width) / 2, (gameSize.y - tp.height) / 2),
+    );
   }
 }
