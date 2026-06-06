@@ -9,6 +9,7 @@ import 'explosion.dart';
 import 'grid.dart';
 import 'grid_component.dart';
 import 'player.dart';
+import 'powerup.dart';
 
 const int kMaxEnemies = 3;
 const int kTotalEnemies = 10;
@@ -71,6 +72,7 @@ class PocketBomberGame extends FlameGame with TapCallbacks {
       return;
     }
     _checkEnemyTouch();
+    _checkPowerupPickup();
   }
 
   void _checkEnemyTouch() {
@@ -105,10 +107,15 @@ class PocketBomberGame extends FlameGame with TapCallbacks {
   }
 
   void _placeBomb(int col, int row) {
-    if (_activeBombs >= 1) return;
+    if (_activeBombs >= player.maxBombs) return;
     _activeBombs++;
     _gridComponent.add(
-      BombComponent(gridCol: col, gridRow: row, onExplode: _handleBombExplosion),
+      BombComponent(
+        gridCol: col,
+        gridRow: row,
+        blastRadius: player.blastRadius,
+        onExplode: _handleBombExplosion,
+      ),
     );
   }
 
@@ -129,6 +136,12 @@ class PocketBomberGame extends FlameGame with TapCallbacks {
         blastTiles.add((col, row));
         if (tile == TileType.softWall) {
           grid.setTile(col, row, TileType.floor);
+          final powerup = grid.takePowerup(col, row);
+          if (powerup != null) {
+            _gridComponent.add(
+              PowerupComponent(type: powerup, gridCol: col, gridRow: row),
+            );
+          }
           break;
         }
         final chainBomb = _findBomb(col, row);
@@ -200,6 +213,29 @@ class PocketBomberGame extends FlameGame with TapCallbacks {
       }
     }
     return null;
+  }
+
+  void _checkPowerupPickup() {
+    for (final child in _gridComponent.children.toList()) {
+      if (child is PowerupComponent &&
+          child.gridCol == player.gridCol &&
+          child.gridRow == player.gridRow) {
+        child.removeFromParent();
+        _applyPowerup(child.type);
+        break;
+      }
+    }
+  }
+
+  void _applyPowerup(PowerupType type) {
+    switch (type) {
+      case PowerupType.extraBomb:
+        player.maxBombs++;
+      case PowerupType.blastRadius:
+        player.blastRadius++;
+      case PowerupType.speed:
+        player.moveDuration *= 0.75;
+    }
   }
 
   void _onPlayerDied() {

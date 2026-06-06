@@ -9,7 +9,9 @@ class PlayerComponent extends PositionComponent {
   int gridCol;
   int gridRow;
 
-  static const double _moveDuration = 0.15;
+  double moveDuration = 0.15;
+  int maxBombs = 1;
+  int blastRadius = 1;
 
   bool _moving = false;
   late Vector2 _moveStart;
@@ -29,12 +31,12 @@ class PlayerComponent extends PositionComponent {
     super.update(dt);
     if (!_moving) return;
     _moveElapsed += dt;
-    if (_moveElapsed >= _moveDuration) {
+    if (_moveElapsed >= moveDuration) {
       position = _moveTarget.clone();
       _moving = false;
       return;
     }
-    final t = _moveElapsed / _moveDuration;
+    final t = _moveElapsed / moveDuration;
     position = Vector2(
       _moveStart.x + (_moveTarget.x - _moveStart.x) * t,
       _moveStart.y + (_moveTarget.y - _moveStart.y) * t,
