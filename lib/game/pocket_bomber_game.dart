@@ -8,6 +8,7 @@ import 'enemy.dart';
 import 'explosion.dart';
 import 'grid.dart';
 import 'grid_component.dart';
+import 'hud_component.dart';
 import 'player.dart';
 import 'powerup.dart';
 
@@ -35,6 +36,13 @@ class PocketBomberGame extends FlameGame with TapCallbacks {
   Future<void> onLoad() async {
     await super.onLoad();
     gridOffset = Vector2((size.x - kCols * kTileSize) / 2, kHudHeight);
+    add(BombButtonComponent(
+      onPressed: _onBombButtonPressed,
+      center: Vector2(
+        gridOffset.x + kCols * kTileSize - 30,
+        kHudHeight + kRows * kTileSize + 35,
+      ),
+    ));
     _init();
   }
 
@@ -84,6 +92,11 @@ class PocketBomberGame extends FlameGame with TapCallbacks {
     }
   }
 
+  void _onBombButtonPressed() {
+    if (_playerDead) return;
+    _placeBomb(player.gridCol, player.gridRow);
+  }
+
   @override
   void onTapDown(TapDownEvent event) {
     if (_playerDead) return;
@@ -91,11 +104,6 @@ class PocketBomberGame extends FlameGame with TapCallbacks {
     final col = ((pos.x - gridOffset.x) / kTileSize).floor();
     final row = ((pos.y - gridOffset.y) / kTileSize).floor();
     if (col < 0 || col >= kCols || row < 0 || row >= kRows) return;
-
-    if (col == player.gridCol && row == player.gridRow) {
-      _placeBomb(col, row);
-      return;
-    }
 
     final dc = col - player.gridCol;
     final dr = row - player.gridRow;
