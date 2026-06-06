@@ -17,7 +17,7 @@ class Grid {
     final tiles = List.generate(
       kRows,
       (row) => List.generate(kCols, (col) {
-        if (col.isEven && row.isEven) return TileType.hardWall;
+        if (col.isOdd && row.isOdd) return TileType.hardWall;
         return TileType.floor;
       }),
     );
