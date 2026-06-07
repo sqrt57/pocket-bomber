@@ -57,6 +57,8 @@ class PocketBomberGame extends FlameGame with TapCallbacks {
       getScore: () => _score,
       getLives: () => _lives,
       getKills: () => _totalKilled,
+      getBombs: () => player.maxBombs,
+      getBlastRadius: () => player.blastRadius,
     ));
     add(BombButtonComponent(
       onPressed: _onBombButtonPressed,
