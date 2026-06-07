@@ -1,6 +1,5 @@
 import 'dart:collection';
 import 'dart:math';
-import 'dart:ui';
 
 import 'package:flame/components.dart';
 import 'package:flame/events.dart';
@@ -9,6 +8,7 @@ import 'package:flutter/painting.dart';
 
 import 'bomb.dart';
 import 'enemy.dart';
+import 'exit_component.dart';
 import 'explosion.dart';
 import 'grid.dart';
 import 'grid_component.dart';
@@ -18,6 +18,7 @@ import 'powerup.dart';
 
 const int kMaxEnemies = 3;
 const int kTotalEnemies = 10;
+const int kStartLives = 3;
 
 class PocketBomberGame extends FlameGame with TapCallbacks {
   late Grid grid;
@@ -30,14 +31,20 @@ class PocketBomberGame extends FlameGame with TapCallbacks {
   int _totalKilled = 0;
   final List<EnemyComponent> _enemies = [];
 
+  int _score = 0;
+  int _lives = kStartLives;
+
   bool _playerDead = false;
   double _deathTimer = 0;
   static const double _deathDelay = 0.6;
 
   bool _playerWon = false;
-  double _winTimer = 0;
+  bool _gameOver = false;
   _WinOverlay? _winOverlay;
-  static const double _winDelay = 2.0;
+  _GameOverOverlay? _gameOverOverlay;
+
+  bool _exitSpawned = false;
+  ExitComponent? _exitComponent;
 
   final _rng = Random();
 
@@ -45,6 +52,12 @@ class PocketBomberGame extends FlameGame with TapCallbacks {
   Future<void> onLoad() async {
     await super.onLoad();
     gridOffset = Vector2((size.x - kCols * kTileSize) / 2, kHudHeight);
+    add(HudComponent(
+      gameWidth: size.x,
+      getScore: () => _score,
+      getLives: () => _lives,
+      getKills: () => _totalKilled,
+    ));
     add(BombButtonComponent(
       onPressed: _onBombButtonPressed,
       center: Vector2(
@@ -68,7 +81,9 @@ class PocketBomberGame extends FlameGame with TapCallbacks {
     _playerDead = false;
     _deathTimer = 0;
     _playerWon = false;
-    _winTimer = 0;
+    _gameOver = false;
+    _exitSpawned = false;
+    _exitComponent = null;
     _enemies.clear();
 
     for (var i = 0; i < kMaxEnemies; i++) {
@@ -76,9 +91,19 @@ class PocketBomberGame extends FlameGame with TapCallbacks {
     }
   }
 
-  void _restart() {
+  void _restartLevel() {
+    _gridComponent.removeFromParent();
+    _enemies.clear();
+    _init();
+  }
+
+  void _startNewGame() {
     _winOverlay?.removeFromParent();
     _winOverlay = null;
+    _gameOverOverlay?.removeFromParent();
+    _gameOverOverlay = null;
+    _lives = kStartLives;
+    _score = 0;
     _gridComponent.removeFromParent();
     _enemies.clear();
     _init();
@@ -87,18 +112,30 @@ class PocketBomberGame extends FlameGame with TapCallbacks {
   @override
   void update(double dt) {
     super.update(dt);
-    if (_playerWon) {
-      _winTimer += dt;
-      if (_winTimer >= _winDelay) _restart();
-      return;
-    }
+    if (_playerWon || _gameOver) return;
     if (_playerDead) {
       _deathTimer += dt;
-      if (_deathTimer >= _deathDelay) _restart();
+      if (_deathTimer >= _deathDelay) {
+        _playerDead = false;
+        if (_lives > 0) {
+          _restartLevel();
+        } else {
+          _showGameOver();
+        }
+      }
       return;
     }
     _checkEnemyTouch();
     _checkPowerupPickup();
+    _checkExitReached();
+  }
+
+  void _checkExitReached() {
+    final exit = _exitComponent;
+    if (exit == null) return;
+    if (player.gridCol == exit.gridCol && player.gridRow == exit.gridRow) {
+      _onPlayerWon();
+    }
   }
 
   void _checkEnemyTouch() {
@@ -111,13 +148,17 @@ class PocketBomberGame extends FlameGame with TapCallbacks {
   }
 
   void _onBombButtonPressed() {
-    if (_playerDead || _playerWon) return;
+    if (_playerDead || _playerWon || _gameOver) return;
     _placeBomb(player.gridCol, player.gridRow);
   }
 
   @override
   void onTapDown(TapDownEvent event) {
-    if (_playerDead || _playerWon) return;
+    if (_playerWon || _gameOver) {
+      _startNewGame();
+      return;
+    }
+    if (_playerDead) return;
     final pos = event.canvasPosition;
     final col = ((pos.x - gridOffset.x) / kTileSize).floor();
     final row = ((pos.y - gridOffset.y) / kTileSize).floor();
@@ -205,7 +246,6 @@ class PocketBomberGame extends FlameGame with TapCallbacks {
     _activeBombs--;
     _gridComponent.add(ExplosionComponent(blastTiles));
 
-    // Kill enemies caught in the blast
     final killed = _enemies
         .where((e) => blastTiles.contains((e.gridCol, e.gridRow)))
         .toList();
@@ -213,21 +253,42 @@ class PocketBomberGame extends FlameGame with TapCallbacks {
       e.removeFromParent();
       _enemies.remove(e);
       _totalKilled++;
+      _score += 100;
       _spawnEnemy();
     }
 
-    // Kill player if caught in the blast
     if (!_playerDead && blastTiles.contains((player.gridCol, player.gridRow))) {
       _onPlayerDied();
     }
 
-    if (_totalKilled >= kTotalEnemies && !_playerDead && !_playerWon) {
-      _onPlayerWon();
+    if (!_exitSpawned && _totalKilled >= kTotalEnemies && !_playerDead) {
+      _spawnExit();
     }
 
     for (final b in toChain) {
       b.trigger();
     }
+  }
+
+  void _spawnExit() {
+    _exitSpawned = true;
+    (int, int)? best;
+    var bestDist = -1;
+    for (var row = 0; row < kRows; row++) {
+      for (var col = 0; col < kCols; col++) {
+        if (!grid.isWalkable(col, row)) continue;
+        final d =
+            (col - player.gridCol).abs() + (row - player.gridRow).abs();
+        if (d > bestDist) {
+          bestDist = d;
+          best = (col, row);
+        }
+      }
+    }
+    if (best == null) return;
+    final (col, row) = best;
+    _exitComponent = ExitComponent(gridCol: col, gridRow: row);
+    _gridComponent.add(_exitComponent!);
   }
 
   void _spawnEnemy() {
@@ -292,21 +353,28 @@ class PocketBomberGame extends FlameGame with TapCallbacks {
   }
 
   void _onPlayerDied() {
+    _lives--;
     _playerDead = true;
     _deathTimer = 0;
   }
 
+  void _showGameOver() {
+    _gameOver = true;
+    _gameOverOverlay = _GameOverOverlay(gameSize: size, score: _score);
+    add(_gameOverOverlay!);
+  }
+
   void _onPlayerWon() {
     _playerWon = true;
-    _winTimer = 0;
-    _winOverlay = _WinOverlay(gameSize: size);
+    _winOverlay = _WinOverlay(gameSize: size, score: _score);
     add(_winOverlay!);
   }
 }
 
 class _WinOverlay extends Component {
-  _WinOverlay({required this.gameSize});
+  _WinOverlay({required this.gameSize, required this.score});
   final Vector2 gameSize;
+  final int score;
 
   @override
   void render(Canvas canvas) {
@@ -314,20 +382,63 @@ class _WinOverlay extends Component {
       Rect.fromLTWH(0, 0, gameSize.x, gameSize.y),
       Paint()..color = const Color(0x99000000),
     );
+    _drawCentered(canvas, 'YOU WIN!', 48, const Color(0xFFFFD700), -40);
+    _drawCentered(canvas, 'Score: $score', 24, const Color(0xFFFFFFFF), 20);
+    _drawCentered(canvas, 'Tap to play again', 18, const Color(0xFFCCCCCC), 60);
+  }
+
+  void _drawCentered(
+      Canvas canvas, String text, double size, Color color, double dy) {
     final tp = TextPainter(
-      text: const TextSpan(
-        text: 'YOU WIN!',
-        style: TextStyle(
-          color: Color(0xFFFFD700),
-          fontSize: 48,
-          fontWeight: FontWeight.bold,
-        ),
+      text: TextSpan(
+        text: text,
+        style:
+            TextStyle(color: color, fontSize: size, fontWeight: FontWeight.bold),
       ),
       textDirection: TextDirection.ltr,
     )..layout();
     tp.paint(
       canvas,
-      Offset((gameSize.x - tp.width) / 2, (gameSize.y - tp.height) / 2),
+      Offset(
+        (gameSize.x - tp.width) / 2,
+        gameSize.y / 2 + dy - tp.height / 2,
+      ),
+    );
+  }
+}
+
+class _GameOverOverlay extends Component {
+  _GameOverOverlay({required this.gameSize, required this.score});
+  final Vector2 gameSize;
+  final int score;
+
+  @override
+  void render(Canvas canvas) {
+    canvas.drawRect(
+      Rect.fromLTWH(0, 0, gameSize.x, gameSize.y),
+      Paint()..color = const Color(0x99000000),
+    );
+    _drawCentered(canvas, 'GAME OVER', 48, const Color(0xFFFF4444), -40);
+    _drawCentered(canvas, 'Score: $score', 24, const Color(0xFFFFFFFF), 20);
+    _drawCentered(canvas, 'Tap to play again', 18, const Color(0xFFCCCCCC), 60);
+  }
+
+  void _drawCentered(
+      Canvas canvas, String text, double size, Color color, double dy) {
+    final tp = TextPainter(
+      text: TextSpan(
+        text: text,
+        style:
+            TextStyle(color: color, fontSize: size, fontWeight: FontWeight.bold),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    tp.paint(
+      canvas,
+      Offset(
+        (gameSize.x - tp.width) / 2,
+        gameSize.y / 2 + dy - tp.height / 2,
+      ),
     );
   }
 }
